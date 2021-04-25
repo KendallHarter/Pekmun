@@ -63,9 +63,18 @@ void set_obj_display(int obj_no, style s)
    }
 }
 
+void wait_for_vblank()
+{
+   // wait for vblank to end
+   while ((*(volatile std::uint16_t*)(0x4000004) & 1)) {}
+   // wait for vblank to start
+   while (!(*(volatile std::uint16_t*)(0x4000004) & 1)) {}
+}
+
 struct keypad_pressed_ {
    void update()
    {
+      wait_for_vblank();
       raw_val_prev = raw_val;
       raw_val = *(volatile std::uint16_t*)(0x4000130);
    }
@@ -93,14 +102,6 @@ struct keypad_pressed_ {
 };
 
 keypad_pressed_ keypad_pressed;
-
-void wait_for_vblank()
-{
-   // wait for vblank to end
-   while ((*(volatile std::uint16_t*)(0x4000004) & 1)) {}
-   // wait for vblank to start
-   while (!(*(volatile std::uint16_t*)(0x4000004) & 1)) {}
-}
 
 void title(const std::uint16_t* graphics, bool show_options)
 {
@@ -197,8 +198,8 @@ void title(const std::uint16_t* graphics, bool show_options)
 constexpr std::uint8_t field_data[] {
    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
    1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1,
-   1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
-   1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
+   1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1,
+   1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1,
    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1,
    1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1,
    1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1,
@@ -224,7 +225,15 @@ struct move {
 constexpr std::array moves {
    move{"", 0, 0},
    move{"hiss", 30, 39},
-   move{"agryhis", 50, 17}
+   move{"big hiss", 55, 22},
+   move{"agryhiss", 80, 13},
+   move{"horror", 500, 3},
+   move{"destroy", 1000, 2},
+   move{"punch", 300, 20},
+   move{"lines", 100, 5},
+   move{"dots", 50, 40},
+   move{"confse", 57, 23},
+   move{"art", 999, 1}
 };
 
 struct base_dude {
@@ -233,25 +242,29 @@ struct base_dude {
    std::uint8_t attack_mult;
    std::uint8_t defense_mult;
    std::uint8_t speed_mult;
-   std::uint8_t hp;
-   std::uint8_t attack;
-   std::uint8_t defense;
-   std::uint8_t speed;
    std::array<std::pair<std::uint8_t, std::uint8_t>, 6> moves;
 };
 
 constexpr std::array base_dudes {
    base_dude{
       "snake",
-      40, 40, 40, 40,
-      30, 15, 15, 10,
-      {{{0, 1}}}
+      60, 60, 60, 60,
+      {{{0, 1}, {10, 2}}}
    },
    base_dude{
       "agry snk",
-      20, 80, 20, 60,
-      50, 60, 30, 50,
-      {{{0, 1}, {0, 2}}}
+      40, 100, 40, 80,
+      {{{0, 1}, {20, 3}}}
+   },
+   base_dude{
+      "somethng",
+      255, 255, 255, 255,
+      {{{0, 4}, {0, 5}, {0, 6}}}
+   },
+   base_dude{
+      "art slf",
+      80, 120, 80, 120,
+      {{{0, 7}, {0, 8}, {0, 9}, {25, 10}}}
    }
 };
 
@@ -263,51 +276,103 @@ struct dude {
    std::uint16_t speed;
    std::uint16_t level;
    int base_dude_index;
-   std::array<std::uint8_t, 6> ammo_used;
+   std::array<std::uint8_t, 6> ammo_used = {};
 };
 
 struct map_event {
    std::int8_t x;
    std::int8_t y;
    display_sprite sprite;
-   std::span<dude> line_up;
+   std::span<const dude> line_up;
    bool is_battle = true;
    std::uint8_t sprite_no = 0;
    bool active = true;
 };
 
-constexpr dude weak_snake {
-   base_dudes[0].hp / 2,
-   base_dudes[0].hp / 2,
-   base_dudes[0].attack / 2,
-   base_dudes[0].defense / 2,
-   base_dudes[0].speed / 2,
-   1,
-   0,
-   {}
+constexpr dude starter_dude {
+   60,
+   60,
+   15,
+   15,
+   15,
+   3,
+   0
 };
 
-std::array weak_snake_team{weak_snake};
+constexpr dude weak_snake {
+   20,
+   20,
+   12,
+   12,
+   40,
+   1,
+   0
+};
+
+constexpr dude something_dude {
+   20000,
+   20000,
+   500,
+   500,
+   40000,
+   10000,
+   2
+};
+
+constexpr dude less_angry_snake_dude {
+   30,
+   30,
+   25,
+   5,
+   20,
+   10,
+   1
+};
+
+constexpr dude angry_snake_dude {
+   60,
+   60,
+   50,
+   10,
+   40,
+   15,
+   1
+};
+
+constexpr dude art_dude {
+   500,
+   500,
+   30,
+   30,
+   20,
+   20,
+   3
+};
+
+constexpr std::array weak_snake_team{weak_snake};
+constexpr std::array big_weak_snake_team{
+   weak_snake, weak_snake, weak_snake, weak_snake, weak_snake, weak_snake, weak_snake, weak_snake, weak_snake, weak_snake,
+   weak_snake, weak_snake, weak_snake, weak_snake, weak_snake, weak_snake, weak_snake, weak_snake, weak_snake, weak_snake,
+   weak_snake, weak_snake, weak_snake, weak_snake, weak_snake, weak_snake, weak_snake, weak_snake, weak_snake, weak_snake
+};
+constexpr std::array snake_team{starter_dude, weak_snake};
+constexpr std::array angry_snake_one{less_angry_snake_dude};
+constexpr std::array angry_snake_two{weak_snake, starter_dude, angry_snake_dude};
+constexpr std::array something_team{something_dude};
+constexpr std::array art_team{weak_snake, starter_dude, art_dude};
 
 constexpr std::array map_events {
    map_event{3, 3, display_sprite::snake, {weak_snake_team}},
-   map_event{6, 4, display_sprite::snake, {weak_snake_team}},
-   map_event{12, 7, display_sprite::art_itself, {weak_snake_team}},
-   map_event{11, 8, display_sprite::angry_snake, {weak_snake_team}},
-   map_event{8, 6, display_sprite::angry_snake, {weak_snake_team}},
-   map_event{12, 3, display_sprite::something, {weak_snake_team}},
+   map_event{4, 4, display_sprite::snake, {weak_snake_team}},
+   map_event{3, 5, display_sprite::snake, {weak_snake_team}},
+   map_event{7, 3, display_sprite::snake, {big_weak_snake_team}},
+   map_event{5, 3, display_sprite::snake, {weak_snake_team}},
+   map_event{6, 4, display_sprite::snake, {snake_team}},
+   map_event{12, 7, display_sprite::art_itself, {art_team}},
+   map_event{11, 8, display_sprite::angry_snake, {angry_snake_two}},
+   map_event{8, 6, display_sprite::angry_snake, {angry_snake_one}},
+   map_event{12, 3, display_sprite::something, {something_team}},
    map_event{12, 6, display_sprite::none, {}, false},
-};
-
-constexpr dude starter_dude {
-   base_dudes[0].hp,
-   base_dudes[0].hp,
-   base_dudes[0].attack,
-   base_dudes[0].defense,
-   base_dudes[0].speed,
-   1,
-   0,
-   {}
 };
 
 void pause_until_a()
@@ -348,13 +413,24 @@ int calc_damage(const dude& attacker, const dude& defender, const move& the_move
 }
 
 void get_experience(dude& slayer, dude& slain) {
-   ;
+   const auto& base_slayer = base_dudes[slayer.base_dude_index];
+   const std::uint8_t mults[] {base_slayer.attack_mult, base_slayer.defense_mult, base_slayer.speed_mult, base_slayer.hp_mult, base_slayer.hp_mult};
+   const std::uint16_t stats[] {slain.attack, slain.defense, slain.speed, slain.max_hp, slain.max_hp};
+   std::uint16_t* add_to[] {&slayer.attack, &slayer.defense, &slayer.speed, &slayer.hp, &slayer.max_hp};
+   int gains = 0;
+   const int level_diff = slain.level - slayer.level;
+   for (int i = 0; i < 5; ++i) {
+      const auto amount = std::clamp(stats[i] * mults[i] / 512 + (level_diff / 16), 0, 0xFF);
+      gains += amount;
+      *(add_to[i]) += amount;
+   }
+   slayer.level += gains / 6;
 }
 
 void field()
 {
-   std::array<dude, map_events.size()> your_dudes{starter_dude, starter_dude};
-   int num_dudes = 2;
+   std::array<dude, map_events.size()> your_dudes{starter_dude};
+   int num_dudes = 1;
    int active_index = 0;
    using namespace gba::lcd_opt;
    using namespace gba::dma_opt;
@@ -536,7 +612,9 @@ void field()
       if (num_dudes > 1) {
          disp_text(log_x, 0,
             "with a\n"
-            "select\n"
+            "left\n"
+            "  maybe,,\n"
+            "  right\n"
             " one can\n"
             "do a\n"
             "   change"
@@ -560,11 +638,16 @@ void field()
          "\n"
          "faster"
       );
+      int active_enemy = 0;
       const auto disp_all_stats = [&](const dude& yours, const dude& theirs) {
          disp_dude(yours, false);
          disp_dude(theirs, true);
          disp_dude_stats(yours, false);
          disp_dude_stats(theirs, true);
+         disp_text(0, 3, "num");
+         disp_text(4, 3, to_str(active_index + 1).data() + 3);
+         disp_text(11, 3, "num");
+         disp_text(15, 3, to_str(active_enemy + 1).data() + 3);
          char faster_to_write[2] {'\0', '\0'};
          faster_to_write[0] = yours.speed > theirs.speed ? 'l' : 'r';
          disp_text(log_x + 8, 19, faster_to_write);
@@ -580,8 +663,24 @@ void field()
       };
       const auto move_y = stat_y + 2;
       while (true) {
+         const auto clear_log = [&]() {
+            // laziest/easiest way to clear the log
+            disp_text(log_x, 0,
+               "         \n"
+               "         \n"
+               "         \n"
+               "         \n"
+               "         \n"
+               "         \n"
+               "         \n"
+               "         \n"
+               "         \n"
+               "         \n"
+               "         \n"
+            );
+         };
          int move_index = 0;
-         disp_all_stats(your_dudes[active_index], enemies[0]);
+         disp_all_stats(your_dudes[active_index], enemies[active_enemy]);
          auto& me = your_dudes[active_index];
          const auto disp_move_status = [&](const move& m) {
             disp_text(log_x - 6, move_y + 1, to_str(m.power).data());
@@ -589,6 +688,82 @@ void field()
             disp_text(log_x - 6, move_y + 5, to_str(ammo_left).data() + 3);
             disp_text(log_x - 3, move_y + 5, to_str(m.max_ammo).data() + 3);
          };
+         if (enemies[active_enemy].hp == 0) {
+            get_experience(me, enemies[active_enemy]);
+            for (int i = 0; i < num_dudes; ++i) {
+               get_experience(your_dudes[i], enemies[active_enemy]);
+            }
+            disp_all_stats(your_dudes[active_index], enemies[active_enemy]);
+            if (active_enemy != std::ssize(enemies) - 1) {
+               active_enemy += 1;
+               disp_text(0, move_y,
+                  "next dude\n"
+                  "  is     \n"
+                  "         \n"
+                  "         \n"
+                  "         \n"
+               );
+               const auto index = enemies[active_enemy].base_dude_index;
+               disp_text(0, move_y + 2, base_dudes[index].name.data());
+               set_obj_display(enemy_sprite, style::disable);
+               pause_until_a();
+               disp_text(0, move_y,
+                  "         \n"
+                  "         \n"
+                  "         \n"
+                  "         \n"
+                  "         \n"
+               );
+               continue;
+            }
+            break;
+         }
+         if (me.hp == 0) {
+            disp_text(0, move_y,
+               "the dude \n"
+               "         \n"
+               "has a    \n"
+               "    fall \n"
+               "         \n"
+            );
+            get_experience(enemies[active_enemy], me);
+            for (int i = active_enemy; i < std::ssize(enemies); ++i) {
+               get_experience(enemies[i], me);
+            }
+            disp_all_stats(your_dudes[active_index], enemies[active_enemy]);
+            set_obj_display(you_sprite, style::disable);
+            disp_text(0, move_y + 1, base_dudes[me.base_dude_index].name.data());
+            pause_until_a();
+            std::swap(me, your_dudes[num_dudes - 1]);
+            active_index = 0;
+            num_dudes -= 1;
+            disp_text(0, move_y,
+               "         \n"
+               "         \n"
+               "         \n"
+               "         \n"
+               "         \n"
+            );
+            if (num_dudes == 0) {
+               disp_text(0, move_y,
+                  "you losed\n"
+                  "         \n"
+                  "         \n"
+                  "         \n"
+                  "         \n"
+               );
+               pause_until_a();
+               return false;
+            }
+            continue;
+         }
+         disp_text(0, move_y,
+            "         \n"
+            "         \n"
+            "         \n"
+            "         \n"
+            "         \n"
+         );
          const auto num_moves = calc_num_moves(me);
          for (int i = 0; i < num_moves; ++i) {
             const auto index = base_dudes[me.base_dude_index].moves[i].second;
@@ -604,9 +779,16 @@ void field()
             while (!keypad_pressed.a()) {
                keypad_pressed.update();
                const auto old_index = move_index;
-               if (keypad_pressed.select()) {
+               if (keypad_pressed.right()) {
                   active_index += 1;
                   active_index %= num_dudes;
+                  return false;
+               }
+               if (keypad_pressed.left()) {
+                  if (active_index == 0) {
+                     active_index = num_dudes;
+                  }
+                  active_index -= 1;
                   return false;
                }
                if (keypad_pressed.up()) { --move_index; }
@@ -621,21 +803,11 @@ void field()
                   disp_move_status(moves[base_move_index]);
                }
             }
+            disp_text(0, move_y + move_index, " ");
             return true;
          }();
          if (!keep_going) { continue; }
-         // laziest/easiest way to clear the log
-         disp_text(log_x, 0,
-            "         \n"
-            "         \n"
-            "         \n"
-            "         \n"
-            "         \n"
-            "         \n"
-            "         \n"
-            "         \n"
-            "         \n"
-         );
+         clear_log();
          int output_y = 0;
          const auto do_attack = [&](dude& attacker, dude& defender, int move_used, bool is_enemy) {
             const auto& attack_used = moves[base_dudes[attacker.base_dude_index].moves[move_used].second];
@@ -665,20 +837,46 @@ void field()
             }
             output_y += 6;
          };
-         // TODO: Actually handle speed and such
-         do_attack(me, enemies[0], move_index, false);
-         do_attack(enemies[0], me, 0, true);
-         if (enemies[0].hp == 0) {
-            break;
+         const auto process_attacks = [&](dude& first, dude& second, int first_attack, int second_attack) {
+            do_attack(first, second, first_attack, &first != &me);
+            if (second.hp > 0) {
+               do_attack(second, first, second_attack, &second != &me);
+            }
+         };
+         static std::minstd_rand0 prng;
+         const auto num_enemy_moves = calc_num_moves(enemies[active_enemy]);
+         // random move but try to find something with ammo
+         auto enemy_attack = prng() % num_enemy_moves;
+         for (int i = 0; i < num_enemy_moves; ++i) {
+            const auto new_move = (enemy_attack + i) % num_enemy_moves;
+            const auto move_index = base_dudes[enemies[active_enemy].base_dude_index].moves[new_move].second;
+            if (enemies[active_enemy].ammo_used[new_move] <= moves[move_index].max_ammo) {
+               enemy_attack = new_move;
+            }
+         }
+         if (me.speed > enemies[active_enemy].speed) {
+            process_attacks(me, enemies[active_enemy], move_index, enemy_attack);
+         }
+         else {
+            process_attacks(enemies[active_enemy], me, enemy_attack, move_index);
          }
       }
+      set_obj_display(enemy_sprite, style::disable);
       disp_text(0, move_y,
          "you winned\n"
          "         \n"
+         "it is    \n"
          "         \n"
-         "         \n"
+         "you got  \n"
          "         \n"
       );
+      disp_text(0, move_y + 3, base_dudes[enemies.back().base_dude_index].name.data());
+      your_dudes[num_dudes] = enemies.back();
+      your_dudes[num_dudes].hp = your_dudes[num_dudes].max_hp;
+      for (auto& c : your_dudes[num_dudes].ammo_used) {
+         c = 0;
+      }
+      num_dudes += 1;
       pause_until_a();
       set_obj_display(you_sprite, style::disable);
       set_obj_display(enemy_sprite, style::disable);
@@ -713,7 +911,9 @@ void field()
                set_obj_x_y(ev.sprite_no, 120 - 32, 80 - 32);
                pause_until_a();
                set_obj_display(ev.sprite_no, style::disable);
-               if(!battle(ev.line_up)) { return; }
+               std::array<dude, 32> temp_dudes;
+               std::copy(ev.line_up.begin(), ev.line_up.end(), temp_dudes.begin());
+               if(!battle({temp_dudes.begin(), ev.line_up.size()})) { return; }
                reset_field();
                set_obj_display(1, style::enable);
                for (const auto& ev2 : events) {
