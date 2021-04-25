@@ -9,6 +9,9 @@
 #include "gba.hpp"
 #include "build/heck.hpp"
 
+// I can't properly express how terrible the vast majority of this code is
+// It works though (also was made in the span of 3 days)
+
 // [[gnu::section(".ewram")]] std::array<std::uint32_t, 20000> buffer;
 
 // This all obv. needs to be better abstracted later but this is fine for now
@@ -87,14 +90,15 @@ struct keypad_pressed_ {
    bool left() { return impl(5); }
    bool up() { return impl(6); }
    bool down() { return impl(7); }
-   bool l() { return impl(8); }
-   bool r() { return impl(9); }
+   bool r() { return impl(8); }
+   bool l() { return impl(9); }
 
    bool impl(int bit_no) {
-      const auto r_held = (raw_val & (1 << 9)) == 0;
+      const auto r_held = (raw_val & (1 << 8)) == 0;
+      const auto l_held = (raw_val & (1 << 9)) == 0;
       const std::uint16_t mask = 1 << bit_no;
       // if previously not pressed but now pressed
-      return (((raw_val_prev & mask) != 0) || r_held) && ((raw_val & mask) == 0);
+      return (((raw_val_prev & mask) != 0) || r_held || l_held) && ((raw_val & mask) == 0);
    }
 
    std::uint16_t raw_val_prev{0xFFFF};
@@ -103,97 +107,7 @@ struct keypad_pressed_ {
 
 keypad_pressed_ keypad_pressed;
 
-void title(const std::uint16_t* graphics, bool show_options)
-{
-   for (int i = 0; i < 128; ++i) {
-      set_obj_display(i, style::disable);
-   }
-   volatile std::uint32_t* vram = (std::uint32_t*)0x6000000;
-   using namespace gba::lcd_opt;
-   using namespace gba::dma_opt;
-   gba::lcd.set_options(gba::lcd_options{}
-      .set(bg_mode{3})
-      .set(forced_blank::off)
-      .set(display_bg2::on)
-      .set(display_obj::on)
-      .set(display_window_0::off)
-      .set(display_window_1::off)
-      .set(display_window_obj::off)
-      .set(obj_char_mapping::one_dimensional)
-   );
-   gba::dma3.set_source(graphics);
-   gba::dma3.set_destination((void*)vram);
-   gba::dma3.set_word_count(std::size(title_screen) / 2);
-   gba::dma3.set_options(gba::dma_options{}
-      .set(dest_addr_cntrl::increment)
-      .set(source_addr_cntrl::increment)
-      .set(repeat::off)
-      .set(transfer_type::bits_32)
-      .set(start_timing::vblank)
-      .set(irq::disable)
-      .set(enable::on)
-   );
-   // make background lower priority than sprites
-   volatile std::uint16_t* bg2_control = (std::uint16_t*)0x400000C;
-   auto temp_val = *bg2_control;
-   temp_val |= 3;
-   *bg2_control = temp_val;
-   if (!show_options) {
-      while(true) {}
-   }
-   // copy tile and palette data
-   volatile std::uint32_t* obj_tiles = (std::uint32_t*)0x6014000;
-   volatile std::uint16_t* obj_palettes = (std::uint16_t*)0x5000200;
-   const auto char_output = std::copy(std::begin(snake), std::end(snake), (std::uint8_t*)obj_tiles);
-   const auto special_output = std::copy(std::begin(chars), std::end(chars), (std::uint8_t*)char_output);
-   std::copy(std::begin(special_font), std::end(special_font), (std::uint8_t*)special_output);
-   std::copy(std::begin(snake_pal), std::end(snake_pal), obj_palettes);
-   std::copy(std::begin(chars_pal), std::end(chars_pal), obj_palettes + 0x10);
-   // Set transformation zero to quarter size
-   *(std::uint16_t*)(0x7000006) = 0b0000'0100'0000'0000;
-   *(std::uint16_t*)(0x700001E) = 0b0000'0100'0000'0000;
-   // Display text options (horribly hackish)
-   constexpr std::array<const char*, 3> strings{"new", "continue", "quick load"};
-   int x = 15;
-   int y = 2;
-   int n = 2;
-   for (unsigned s = 0; s < strings.size(); ++s) {
-      for (int i = 0; strings[s][i] != '\0'; ++i) {
-         if (strings[s][i] < 'a' || strings[s][i] > 'z') {
-            ++x;
-            continue;
-         }
-         set_obj_display(n, style::enable);
-         set_obj_tile_info(n, 1, 512 + 64 + (strings[s][i] - 'a'));
-         set_obj_size(n, obj_size::s8_8, false);
-         set_obj_x_y(n, x * 8, y * 8);
-         ++n;
-         ++x;
-      }
-      ++y;
-      x = 15;
-   }
-   // Arrow (also horribly hackish)
-   set_obj_display(1, style::enable);
-   set_obj_tile_info(1, 1, 512 + 64 + 26 + 2);
-   set_obj_size(1, obj_size::s8_8, false);
-   set_obj_x_y(1, 14 * 8, 2 * 8);
-   int arrow_y = 2;
-   while (true) {
-      keypad_pressed.update();
-      if (keypad_pressed.down()) {
-         arrow_y += 1;
-      }
-      else if (keypad_pressed.up()) {
-         arrow_y -= 1;
-      }
-      if (keypad_pressed.a()) {
-         if (arrow_y == 2) { return; }
-      }
-      arrow_y = std::clamp(arrow_y, 2, 4);
-      set_obj_x_y(1, 14 * 8, arrow_y * 8);
-   }
-}
+bool title(const std::uint16_t* graphics, bool show_options);
 
 constexpr std::uint8_t field_data[] {
    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -427,7 +341,18 @@ void get_experience(dude& slayer, dude& slain) {
    slayer.level += gains / 6;
 }
 
-void field()
+namespace qs_data {
+
+bool exists = false;
+int num_dudes;
+std::array<dude, map_events.size()> your_dudes;
+std::remove_const_t<decltype(map_events)> events;
+int x;
+int y;
+
+} // namespace qs_data
+
+void field(bool load_data)
 {
    std::array<dude, map_events.size()> your_dudes{starter_dude};
    int num_dudes = 1;
@@ -536,13 +461,22 @@ void field()
    int char_x = 1;
    int char_y = 1;
    auto events = map_events;
+   if (load_data) {
+      your_dudes = qs_data::your_dudes;
+      char_x = qs_data::x;
+      char_y = qs_data::y;
+      events = qs_data::events;
+      num_dudes = qs_data::num_dudes;
+   }
    for (auto& ev : events) {
       ev.sprite_no = sprite_no;
       const int index = static_cast<int>(ev.sprite);
-      set_obj_display(sprite_no, style::quarter_size);
-      set_obj_tile_info(sprite_no, index, 64 * index);
-      set_obj_size(sprite_no, obj_size::s64_64, false);
-      set_obj_x_y(sprite_no, 8 + (ev.x - 2) * 16, 8 + (ev.y - 2) * 16);
+      if (ev.active) {
+         set_obj_display(sprite_no, style::quarter_size);
+         set_obj_tile_info(sprite_no, index, 64 * index);
+         set_obj_size(sprite_no, obj_size::s64_64, false);
+         set_obj_x_y(sprite_no, 8 + (ev.x - 2) * 16, 8 + (ev.y - 2) * 16);
+      }
       ++sprite_no;
    }
    const auto battle = [&](std::span<dude> enemies) -> bool {
@@ -847,13 +781,13 @@ void field()
          const auto num_enemy_moves = calc_num_moves(enemies[active_enemy]);
          // random move but try to find something with ammo
          auto enemy_attack = prng() % num_enemy_moves;
-         for (int i = 0; i < num_enemy_moves; ++i) {
-            const auto new_move = (enemy_attack + i) % num_enemy_moves;
-            const auto move_index = base_dudes[enemies[active_enemy].base_dude_index].moves[new_move].second;
-            if (enemies[active_enemy].ammo_used[new_move] <= moves[move_index].max_ammo) {
-               enemy_attack = new_move;
-            }
-         }
+         // for (int i = 0; i < num_enemy_moves; ++i) {
+         //    const auto new_move = (enemy_attack + i) % num_enemy_moves;
+         //    const auto move_index = base_dudes[enemies[active_enemy].base_dude_index].moves[new_move].second;
+         //    if (enemies[active_enemy].ammo_used[new_move] <= moves[move_index].max_ammo) {
+         //       enemy_attack = new_move;
+         //    }
+         // }
          if (me.speed > enemies[active_enemy].speed) {
             process_attacks(me, enemies[active_enemy], move_index, enemy_attack);
          }
@@ -902,6 +836,12 @@ void field()
                if (!ev.is_battle) {
                   title(won_screen, false);
                }
+               qs_data::exists = true;
+               qs_data::your_dudes = your_dudes;
+               qs_data::x = last_x;
+               qs_data::y = last_y;
+               qs_data::events = events;
+               qs_data::num_dudes = num_dudes;
                ev.active = false;
                set_obj_display(1, style::disable);
                for (const auto& ev2 : events) {
@@ -927,10 +867,102 @@ void field()
    }
 }
 
+bool title(const std::uint16_t* graphics, bool show_options)
+{
+   for (int i = 0; i < 128; ++i) {
+      set_obj_display(i, style::disable);
+   }
+   volatile std::uint32_t* vram = (std::uint32_t*)0x6000000;
+   using namespace gba::lcd_opt;
+   using namespace gba::dma_opt;
+   gba::lcd.set_options(gba::lcd_options{}
+      .set(bg_mode{3})
+      .set(forced_blank::off)
+      .set(display_bg2::on)
+      .set(display_obj::on)
+      .set(display_window_0::off)
+      .set(display_window_1::off)
+      .set(display_window_obj::off)
+      .set(obj_char_mapping::one_dimensional)
+   );
+   gba::dma3.set_source(graphics);
+   gba::dma3.set_destination((void*)vram);
+   gba::dma3.set_word_count(std::size(title_screen) / 2);
+   gba::dma3.set_options(gba::dma_options{}
+      .set(dest_addr_cntrl::increment)
+      .set(source_addr_cntrl::increment)
+      .set(repeat::off)
+      .set(transfer_type::bits_32)
+      .set(start_timing::vblank)
+      .set(irq::disable)
+      .set(enable::on)
+   );
+   // make background lower priority than sprites
+   volatile std::uint16_t* bg2_control = (std::uint16_t*)0x400000C;
+   auto temp_val = *bg2_control;
+   temp_val |= 3;
+   *bg2_control = temp_val;
+   if (!show_options) {
+      while(true) {}
+   }
+   // copy tile and palette data
+   volatile std::uint32_t* obj_tiles = (std::uint32_t*)0x6014000;
+   volatile std::uint16_t* obj_palettes = (std::uint16_t*)0x5000200;
+   const auto char_output = std::copy(std::begin(snake), std::end(snake), (std::uint8_t*)obj_tiles);
+   const auto special_output = std::copy(std::begin(chars), std::end(chars), (std::uint8_t*)char_output);
+   std::copy(std::begin(special_font), std::end(special_font), (std::uint8_t*)special_output);
+   std::copy(std::begin(snake_pal), std::end(snake_pal), obj_palettes);
+   std::copy(std::begin(chars_pal), std::end(chars_pal), obj_palettes + 0x10);
+   // Set transformation zero to quarter size
+   *(std::uint16_t*)(0x7000006) = 0b0000'0100'0000'0000;
+   *(std::uint16_t*)(0x700001E) = 0b0000'0100'0000'0000;
+   // Display text options (horribly hackish)
+   constexpr std::array<const char*, 3> strings{"new", "continue", "quick load"};
+   int x = 15;
+   int y = 2;
+   int n = 2;
+   for (unsigned s = 0; s < strings.size(); ++s) {
+      for (int i = 0; strings[s][i] != '\0'; ++i) {
+         if (strings[s][i] < 'a' || strings[s][i] > 'z') {
+            ++x;
+            continue;
+         }
+         set_obj_display(n, style::enable);
+         set_obj_tile_info(n, 1, 512 + 64 + (strings[s][i] - 'a'));
+         set_obj_size(n, obj_size::s8_8, false);
+         set_obj_x_y(n, x * 8, y * 8);
+         ++n;
+         ++x;
+      }
+      ++y;
+      x = 15;
+   }
+   // Arrow (also horribly hackish)
+   set_obj_display(1, style::enable);
+   set_obj_tile_info(1, 1, 512 + 64 + 26 + 2);
+   set_obj_size(1, obj_size::s8_8, false);
+   set_obj_x_y(1, 14 * 8, 2 * 8);
+   int arrow_y = qs_data::exists ? 4 : 2;
+   while (true) {
+      keypad_pressed.update();
+      if (keypad_pressed.down()) {
+         arrow_y += 1;
+      }
+      else if (keypad_pressed.up()) {
+         arrow_y -= 1;
+      }
+      if (keypad_pressed.a()) {
+         if (arrow_y == 2) { return false; }
+         if (arrow_y == 4 && qs_data::exists) { return true; }
+      }
+      arrow_y = std::clamp(arrow_y, 2, 4);
+      set_obj_x_y(1, 14 * 8, arrow_y * 8);
+   }
+}
+
 int main()
 {
    while (true) {
-      title(title_screen, true);
-      field();
+      field(title(title_screen, true));
    }
 }
