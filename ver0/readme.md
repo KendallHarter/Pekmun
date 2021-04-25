@@ -12,4 +12,6 @@ The Python version was made to prototype; it isn't as complete.
 
 Holding A upon startup will cause the tile data to not be loaded.
 
-I'm not going to fix this.
+Switching names doesn't clear the full name.
+
+I'm not going to fix any of these.
